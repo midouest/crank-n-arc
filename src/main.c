@@ -5,6 +5,8 @@
 
 #include "pd_api.h"
 
+PlaydateAPI *pd_;
+
 const unsigned int bayer[8][8] = {
     {0, 32, 8, 40, 2, 34, 10, 42},
     {48, 16, 56, 24, 50, 18, 58, 26},
@@ -17,20 +19,20 @@ const unsigned int bayer[8][8] = {
 
 void setPatternAlpha(LCDPattern *pattern, float alpha)
 {
-    // alpha goes from 0 (invisible) to 1 (fully opaque)
-    const unsigned int threshold = (unsigned int)((1.f - alpha) * 64.f);
+    const unsigned int threshold = (unsigned int)((1.0f - alpha) * 64.0f);
     for (int row = 0; row < 8; ++row)
     {
         for (int col = 0; col < 8; ++col)
         {
             if (bayer[row][col] >= threshold)
             {
-                (*pattern)[8 + row] |= (1 << col); // set
+                (*pattern)[row] |= (1 << col);
             }
             else
             {
-                (*pattern)[8 + row] &= ~(1 << col); // clear
+                (*pattern)[row] &= ~(1 << col);
             }
+            (*pattern)[8 + row] |= (1 << col);
         }
     }
 }
@@ -57,6 +59,8 @@ const uint16_t ring_diameter = 2 * RING_RADIUS;
 #define RING4_X 332
 #define RING4_Y 68
 
+#define SELECT_LEVEL 2
+
 int ring_led_quads[N_RINGS][N_LEDS][8];
 
 typedef struct _ring
@@ -65,10 +69,12 @@ typedef struct _ring
     uint16_t y;
     uint16_t anchor_x;
     uint16_t anchor_y;
-    bool dirty;
     bool selected;
     bool pressed;
-    uint8_t levels[N_LEDS];
+    bool dirty;
+    uint32_t dirty_leds_lo;
+    uint32_t dirty_leds_hi;
+    uint8_t leds[N_LEDS];
 } ring_t;
 
 ring_t rings[N_RINGS] = {
@@ -78,28 +84,36 @@ ring_t rings[N_RINGS] = {
      .anchor_y = RING1_Y - RING_RADIUS,
      .dirty = true,
      .selected = true,
-     .pressed = false},
+     .pressed = false,
+     .dirty_leds_lo = 0xffffffff,
+     .dirty_leds_hi = 0xffffffff},
     {.x = RING2_X,
      .y = RING2_Y,
      .anchor_x = RING2_X - RING_RADIUS,
      .anchor_y = RING2_Y - RING_RADIUS,
      .dirty = true,
      .selected = false,
-     .pressed = false},
+     .pressed = false,
+     .dirty_leds_lo = 0xffffffff,
+     .dirty_leds_hi = 0xffffffff},
     {.x = RING3_X,
      .y = RING3_Y,
      .anchor_x = RING3_X - RING_RADIUS,
      .anchor_y = RING3_Y - RING_RADIUS,
      .dirty = true,
      .selected = false,
-     .pressed = false},
+     .pressed = false,
+     .dirty_leds_lo = 0xffffffff,
+     .dirty_leds_hi = 0xffffffff},
     {.x = RING4_X,
      .y = RING4_Y,
      .anchor_x = RING4_X - RING_RADIUS,
      .anchor_y = RING4_Y - RING_RADIUS,
      .dirty = true,
      .selected = false,
-     .pressed = false}};
+     .pressed = false,
+     .dirty_leds_lo = 0xffffffff,
+     .dirty_leds_hi = 0xffffffff}};
 
 bool multi_select = false;
 uint8_t last_select = 0;
@@ -108,7 +122,7 @@ static void init(PlaydateAPI *pd);
 static int update(void *userdata);
 static void serial(const char *data);
 static void sendModEnabled(PlaydateAPI *pd, bool enabled);
-static void sendEncDelta(PlaydateAPI *pd, uint8_t n, double delta);
+static void sendEncDelta(PlaydateAPI *pd, uint8_t n, float delta);
 static void sendKeyPress(PlaydateAPI *pd, uint8_t n, bool s);
 
 #ifdef _WINDLL
@@ -146,17 +160,18 @@ static void sendModEnabled(PlaydateAPI *pd, bool enabled)
     pd->system->logToConsole("~arc: mod %d", enabled);
 }
 
-static void sendEncDelta(PlaydateAPI *pd, uint8_t n, double delta)
+static void sendEncDelta(PlaydateAPI *pd, uint8_t n, float delta)
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdouble-promotion"
     pd->system->logToConsole("~arc: enc %d %f", n, delta);
+#pragma GCC diagnostic pop
 }
 
 static void sendKeyPress(PlaydateAPI *pd, uint8_t n, bool s)
 {
-    pd->system->logToConsole("~arc: mod %d %d", n, s);
+    pd->system->logToConsole("~arc: key %d %d", n, s);
 }
-
-PlaydateAPI *pd_;
 
 static void init(PlaydateAPI *pd)
 {
@@ -169,7 +184,7 @@ static void init(PlaydateAPI *pd)
     for (int i = 0; i < 16; i++)
     {
         setBlackPattern(&level_patterns[i]);
-        setPatternAlpha(&level_patterns[i], i / 15.0f);
+        setPatternAlpha(&level_patterns[i], 1.0f - i / 15.0f);
     }
 
     const double led_angle = 2 * M_PI / N_LEDS;
@@ -192,7 +207,7 @@ static void init(PlaydateAPI *pd)
             const double a = cos(angle);
             const double b = sin(angle);
 
-            rings[i].levels[j] = 0;
+            rings[i].leds[j] = 0;
 
             ring_led_quads[i][j][0] = round(-led_triangle_half_base * a - (-led_padding_radius - led_triangle_height) * b + x0);
             ring_led_quads[i][j][1] = round(-led_triangle_half_base * b + (-led_padding_radius - led_triangle_height) * a + y0);
@@ -208,15 +223,33 @@ static void init(PlaydateAPI *pd)
     }
 }
 
+/**
+ * Examples:
+ * !msg ~arc: map 0 0000000000000000000000000000000000000000000000000000000000000000
+ * !msg ~arc: map 0 0123456789:;<=>?0123456789:;<=>?0123456789:;<=>?0123456789:;<=>?
+ * !msg ~arc: map 0 ????????????????????????????????????????????????????????????????
+ */
 void handleMapMessage(const char *data)
 {
     int index = (data[10] - 48) & 0x3;
     ring_t *ring = &rings[index];
-    for (int i = 12; i < 76; i++)
+    for (int i = 0, j = 12; i < N_LEDS; i++, j++)
     {
-        ring->levels[i - 12] = (data[i] - 48) & 0xf;
+        uint8_t old_level = ring->leds[i];
+        uint8_t new_level = (data[j] - 48) & 0xf;
+        if (new_level != old_level)
+        {
+            ring->leds[i] = new_level;
+            if (i < 32)
+            {
+                ring->dirty_leds_lo |= (1 << i);
+            }
+            else
+            {
+                ring->dirty_leds_hi |= (1 << (i - 32));
+            }
+        }
     }
-    ring->dirty = true;
 }
 
 static void serial(const char *data)
@@ -339,69 +372,54 @@ static int update(void *userdata)
     }
 
     float delta = pd->system->getCrankChange();
-    bool enc = delta != 0.0f;
-
-    for (int i = 0; i < N_RINGS; i++)
+    if (delta != 0.0f)
     {
-        ring_t *ring = &rings[i];
-        if (enc && ring->selected)
+        for (int i = 0; i < N_RINGS; i++)
         {
-            sendEncDelta(pd, i, delta);
+            ring_t *ring = &rings[i];
+            if (ring->selected)
+            {
+                sendEncDelta(pd, i, delta);
+            }
         }
-
-        if (!ring->dirty)
-        {
-            continue;
-        }
-        gfx->fillEllipse(
-            ring->anchor_x - 2,
-            ring->anchor_y - 2,
-            ring_diameter + 4,
-            ring_diameter + 4,
-            0.0f,
-            360.0f,
-            kColorWhite);
     }
 
     for (int i = 0; i < N_RINGS; i++)
     {
         ring_t *ring = &rings[i];
-        if (!ring->dirty)
+        if (ring->dirty_leds_lo != 0 || ring->dirty_leds_hi != 0)
         {
-            continue;
-        }
-
-        const uint8_t *levels = ring->levels;
-        for (int j = 0; j < N_LEDS; j++)
-        {
-            const uint8_t level = levels[j];
-            gfx->fillPolygon(
-                4,
-                ring_led_quads[i][j],
-                (LCDColor)&level_patterns[level],
-                kPolygonFillNonZero);
-        }
-
-        gfx->drawEllipse(
-            ring->anchor_x - 3,
-            ring->anchor_y - 3,
-            2 * (RING_RADIUS + 3),
-            2 * (RING_RADIUS + 3),
-            1,
-            0.0f,
-            360.0f,
-            kColorBlack);
-
-        if (ring->selected)
-        {
-            LCDColor key_color;
-            if (ring->pressed)
+            const uint8_t *leds = ring->leds;
+            for (int j = 0; j < N_LEDS; j++)
             {
-                key_color = kColorBlack;
+                bool dirty = j < 32 ? (ring->dirty_leds_lo & (1 << j)) : (ring->dirty_leds_hi & (1 << (j - 32)));
+                if (dirty)
+                {
+                    const uint8_t level = leds[j];
+                    gfx->fillPolygon(
+                        4,
+                        ring_led_quads[i][j],
+                        (LCDColor)&level_patterns[level],
+                        kPolygonFillNonZero);
+                }
             }
-            else
+            ring->dirty_leds_lo = 0;
+            ring->dirty_leds_hi = 0;
+        }
+
+        if (ring->dirty)
+        {
+            LCDColor key_color = kColorWhite;
+            if (ring->selected)
             {
-                key_color = (LCDColor)&level_patterns[4];
+                if (ring->pressed)
+                {
+                    key_color = kColorBlack;
+                }
+                else
+                {
+                    key_color = (LCDColor)&level_patterns[SELECT_LEVEL];
+                }
             }
             gfx->fillEllipse(
                 ring->anchor_x + LED_LENGTH + LED_PADDING + 2,
@@ -411,16 +429,25 @@ static int update(void *userdata)
                 0.0f,
                 360.0f,
                 key_color);
+            gfx->drawEllipse(
+                ring->anchor_x + LED_LENGTH + LED_PADDING + 1,
+                ring->anchor_y + LED_LENGTH + LED_PADDING + 1,
+                2 * (RING_RADIUS - LED_LENGTH - LED_PADDING - 1) + 1, // looks slightly better when wider
+                2 * (RING_RADIUS - LED_LENGTH - LED_PADDING - 1),
+                1,
+                0.0f,
+                360.0f,
+                kColorBlack);
+            gfx->drawEllipse(
+                ring->anchor_x - 3,
+                ring->anchor_y - 3,
+                2 * (RING_RADIUS + 3),
+                2 * (RING_RADIUS + 3),
+                1,
+                0.0f,
+                360.0f,
+                kColorBlack);
         }
-        gfx->drawEllipse(
-            ring->anchor_x + LED_LENGTH + LED_PADDING + 1,
-            ring->anchor_y + LED_LENGTH + LED_PADDING + 1,
-            2 * (RING_RADIUS - LED_LENGTH - LED_PADDING - 1) + 1, // looks slightly better when wider
-            2 * (RING_RADIUS - LED_LENGTH - LED_PADDING - 1),
-            1,
-            0.0f,
-            360.0f,
-            kColorBlack);
 
         ring->dirty = false;
     }
