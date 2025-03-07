@@ -1,0 +1,7 @@
+.DS_Store
+.vscode/settings.json
+build
+build_device
+*.pdx
+*.dylib
+*.elf
