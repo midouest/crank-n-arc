@@ -117,6 +117,7 @@ ring_t rings[N_RINGS] = {
 
 bool multi_select = false;
 uint8_t last_select = 0;
+bool enable_arc_mod = false;
 
 static void init(PlaydateAPI *pd);
 static int update(void *userdata);
@@ -157,26 +158,24 @@ eventHandler(PlaydateAPI *pd, PDSystemEvent event, uint32_t arg)
 
 static void sendModEnabled(PlaydateAPI *pd, bool enabled)
 {
-    pd->system->logToConsole("~arc: mod %d", enabled);
+    pd->system->logToConsole("arc: mod %d", enabled);
 }
 
 static void sendEncDelta(PlaydateAPI *pd, uint8_t n, float delta)
 {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdouble-promotion"
-    pd->system->logToConsole("~arc: enc %d %f", n, delta);
+    pd->system->logToConsole("arc: enc %d %f", n, delta);
 #pragma GCC diagnostic pop
 }
 
 static void sendKeyPress(PlaydateAPI *pd, uint8_t n, bool s)
 {
-    pd->system->logToConsole("~arc: key %d %d", n, s);
+    pd->system->logToConsole("arc: key %d %d", n, s);
 }
 
 static void init(PlaydateAPI *pd)
 {
-    pd_ = pd;
-
     pd->system->setUpdateCallback(update, pd);
     pd->system->setSerialMessageCallback(serial);
     pd->display->setRefreshRate(50);
@@ -225,15 +224,15 @@ static void init(PlaydateAPI *pd)
 
 /**
  * Examples:
- * !msg ~arc: map 0 0000000000000000000000000000000000000000000000000000000000000000
- * !msg ~arc: map 0 0123456789:;<=>?0123456789:;<=>?0123456789:;<=>?0123456789:;<=>?
- * !msg ~arc: map 0 ????????????????????????????????????????????????????????????????
+ * !msg arc: map 0 0000000000000000000000000000000000000000000000000000000000000000
+ * !msg arc: map 0 0123456789:;<=>?0123456789:;<=>?0123456789:;<=>?0123456789:;<=>?
+ * !msg arc: map 0 ????????????????????????????????????????????????????????????????
  */
 void handleMapMessage(const char *data)
 {
-    int index = (data[10] - 48) & 0x3;
+    int index = (data[9] - 48) & 0x3;
     ring_t *ring = &rings[index];
-    for (int i = 0, j = 12; i < N_LEDS; i++, j++)
+    for (int i = 0, j = 11; i < N_LEDS; i++, j++)
     {
         uint8_t old_level = ring->leds[i];
         uint8_t new_level = (data[j] - 48) & 0xf;
@@ -254,13 +253,13 @@ void handleMapMessage(const char *data)
 
 static void serial(const char *data)
 {
-    if (strncmp("~arc: map ", data, 10) == 0)
+    if (strncmp("arc: map ", data, 9) == 0)
     {
         handleMapMessage(data);
     }
-    else if (strncmp("~arc: mod?", data, 10) == 0)
+    else if (strncmp("arc: mod?", data, 9) == 0)
     {
-        sendModEnabled(pd_, true);
+        enable_arc_mod = true;
     }
 }
 
@@ -299,6 +298,12 @@ void selectRing(PlaydateAPI *pd, uint8_t index, bool a_button_down)
 static int update(void *userdata)
 {
     PlaydateAPI *pd = userdata;
+    if (enable_arc_mod)
+    {
+        sendModEnabled(pd, true);
+        enable_arc_mod = false;
+    }
+
     const struct playdate_graphics *gfx = pd->graphics;
 
     PDButtons current, pushed, released;
