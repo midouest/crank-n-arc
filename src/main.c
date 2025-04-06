@@ -119,7 +119,6 @@ ring_t rings[N_RINGS] = {
      .dirty_leds_hi = 0xffffffff}};
 
 bool shift_pressed = false;
-bool shift_dirty = true;
 bool multi_select = false;
 uint8_t last_select = 0;
 bool enable_arc_mod = false;
@@ -326,7 +325,6 @@ static int update(void *userdata)
         if (!shift_pressed)
         {
             shift_pressed = true;
-            shift_dirty = true;
             sendKeyPress(pd, 0, true);
         }
     }
@@ -335,7 +333,6 @@ static int update(void *userdata)
         if (shift_pressed)
         {
             shift_pressed = false;
-            shift_dirty = true;
             sendKeyPress(pd, 0, false);
         }
     }
@@ -372,33 +369,6 @@ static int update(void *userdata)
                 sendEncDelta(pd, i, delta);
             }
         }
-    }
-
-    if (shift_dirty)
-    {
-        LCDColor key_color = kColorWhite;
-        if (shift_pressed)
-        {
-            key_color = kColorBlack;
-        }
-        gfx->fillEllipse(
-            SHIFT_X,
-            SHIFT_Y,
-            SHIFT_RADIUS,
-            SHIFT_RADIUS,
-            0.0f,
-            360.0f,
-            key_color);
-        gfx->drawEllipse(
-            SHIFT_X,
-            SHIFT_Y,
-            SHIFT_RADIUS,
-            SHIFT_RADIUS,
-            1,
-            0.0,
-            360.0,
-            kColorBlack);
-        shift_dirty = false;
     }
 
     for (int i = 0; i < N_RINGS; i++)
