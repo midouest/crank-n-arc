@@ -43,8 +43,8 @@ void setBlackPattern(LCDPattern *pattern) { memcpy(*pattern, black_pattern, size
 
 LCDPattern level_patterns[16];
 
-#define KEY_BUTTON kButtonA
-#define META_BUTTON kButtonB
+#define KEY_BUTTON kButtonB
+#define META_BUTTON kButtonA
 
 #define N_RINGS 4
 #define N_LEDS 64
