@@ -43,6 +43,9 @@ void setBlackPattern(LCDPattern *pattern) { memcpy(*pattern, black_pattern, size
 
 LCDPattern level_patterns[16];
 
+#define KEY_BUTTON kButtonA
+#define META_BUTTON kButtonB
+
 #define N_RINGS 4
 #define N_LEDS 64
 #define RING_RADIUS 65
@@ -263,7 +266,7 @@ static void serial(const char *data)
     }
 }
 
-void selectRing(PlaydateAPI *pd, uint8_t index, bool a_button_down)
+void selectRing(PlaydateAPI *pd, uint8_t index)
 {
     for (int i = 0; i < N_RINGS; i++)
     {
@@ -274,22 +277,12 @@ void selectRing(PlaydateAPI *pd, uint8_t index, bool a_button_down)
             {
                 ring->selected = true;
                 ring->dirty = true;
-                if (a_button_down && !ring->pressed)
-                {
-                    ring->pressed = true;
-                    sendKeyPress(pd, i, true);
-                }
             }
         }
         else if (!multi_select && ring->selected)
         {
             ring->selected = false;
             ring->dirty = true;
-            if (ring->pressed)
-            {
-                ring->pressed = false;
-                sendKeyPress(pd, i, false);
-            }
         }
     }
     last_select = index;
@@ -309,53 +302,45 @@ static int update(void *userdata)
     PDButtons current, pushed, released;
     pd->system->getButtonState(&current, &pushed, &released);
 
-    bool a_button_down = (pushed & kButtonA) || (current & kButtonA);
-
     if (pushed & kButtonLeft)
     {
-        selectRing(pd, 0, a_button_down);
+        selectRing(pd, 0);
     }
     else if (pushed & kButtonUp)
     {
-        selectRing(pd, 1, a_button_down);
+        selectRing(pd, 1);
     }
     else if (pushed & kButtonDown)
     {
-        selectRing(pd, 2, a_button_down);
+        selectRing(pd, 2);
     }
     else if (pushed & kButtonRight)
     {
-        selectRing(pd, 3, a_button_down);
+        selectRing(pd, 3);
     }
 
-    if (pushed & kButtonA)
+    if (pushed & KEY_BUTTON)
     {
-        for (int i = 0; i < N_RINGS; i++)
+        ring_t *ring = &rings[0];
+        if (!ring->pressed)
         {
-            ring_t *ring = &rings[i];
-            if (ring->selected)
-            {
-                ring->pressed = true;
-                ring->dirty = true;
-                sendKeyPress(pd, i, true);
-            }
+            ring->pressed = true;
+            ring->dirty = true;
+            sendKeyPress(pd, 0, true);
         }
     }
-    else if (released & kButtonA)
+    else if (released & KEY_BUTTON)
     {
-        for (int i = 0; i < N_RINGS; i++)
+        ring_t *ring = &rings[0];
+        if (ring->pressed)
         {
-            ring_t *ring = &rings[i];
-            if (ring->selected && ring->pressed)
-            {
-                ring->pressed = false;
-                ring->dirty = true;
-                sendKeyPress(pd, i, false);
-            }
+            ring->pressed = false;
+            ring->dirty = true;
+            sendKeyPress(pd, 0, false);
         }
     }
 
-    if (pushed & kButtonB)
+    if (pushed & META_BUTTON)
     {
         multi_select = true;
         for (int i = 0; i < N_RINGS; i++)
@@ -371,7 +356,7 @@ static int update(void *userdata)
             }
         }
     }
-    else if (released & kButtonB)
+    else if (released & META_BUTTON)
     {
         multi_select = false;
     }
@@ -415,16 +400,13 @@ static int update(void *userdata)
         if (ring->dirty)
         {
             LCDColor key_color = kColorWhite;
-            if (ring->selected)
+            if (ring->pressed)
             {
-                if (ring->pressed)
-                {
-                    key_color = kColorBlack;
-                }
-                else
-                {
-                    key_color = (LCDColor)&level_patterns[SELECT_LEVEL];
-                }
+                key_color = kColorBlack;
+            }
+            else if (ring->selected)
+            {
+                key_color = (LCDColor)&level_patterns[SELECT_LEVEL];
             }
             gfx->fillEllipse(
                 ring->anchor_x + LED_LENGTH + LED_PADDING + 2,
