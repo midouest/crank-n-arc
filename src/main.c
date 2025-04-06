@@ -75,7 +75,6 @@ typedef struct _ring
     uint16_t anchor_x;
     uint16_t anchor_y;
     bool selected;
-    bool pressed;
     bool dirty;
     uint32_t dirty_leds_lo;
     uint32_t dirty_leds_hi;
