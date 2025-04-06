@@ -5,8 +5,6 @@
 
 #include "pd_api.h"
 
-PlaydateAPI *pd_;
-
 const unsigned int bayer[8][8] = {
     {0, 32, 8, 40, 2, 34, 10, 42},
     {48, 16, 56, 24, 50, 18, 58, 26},
@@ -43,8 +41,8 @@ void setBlackPattern(LCDPattern *pattern) { memcpy(*pattern, black_pattern, size
 
 LCDPattern level_patterns[16];
 
-#define KEY_BUTTON kButtonB
-#define META_BUTTON kButtonA
+const PDButtons key_button = kButtonB;
+const PDButtons meta_button = kButtonA;
 
 #define N_RINGS 4
 #define N_LEDS 64
@@ -320,7 +318,7 @@ static int update(void *userdata)
         selectRing(pd, 3);
     }
 
-    if (pushed & KEY_BUTTON)
+    if (pushed & key_button)
     {
         if (!shift_pressed)
         {
@@ -328,7 +326,7 @@ static int update(void *userdata)
             sendKeyPress(pd, 0, true);
         }
     }
-    else if (released & KEY_BUTTON)
+    else if (released & key_button)
     {
         if (shift_pressed)
         {
@@ -337,7 +335,7 @@ static int update(void *userdata)
         }
     }
 
-    if (pushed & META_BUTTON)
+    if (pushed & meta_button)
     {
         multi_select = true;
         for (int i = 0; i < N_RINGS; i++)
@@ -353,7 +351,7 @@ static int update(void *userdata)
             }
         }
     }
-    else if (released & META_BUTTON)
+    else if (released & meta_button)
     {
         multi_select = false;
     }
