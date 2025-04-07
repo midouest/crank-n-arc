@@ -120,12 +120,21 @@ bool multi_select = false;
 uint8_t last_select = 0;
 bool enable_arc_mod = false;
 
+#ifdef DEBUG
+bool draw_fps = false;
+bool draw_fps_dirty = false;
+PDMenuItem *drawFPSMenuItem;
+#endif
+
 static void init(PlaydateAPI *pd);
 static int update(void *userdata);
 static void serial(const char *data);
 static void sendModEnabled(PlaydateAPI *pd, bool enabled);
 static void sendEncDelta(PlaydateAPI *pd, uint8_t n, float delta);
 static void sendKeyPress(PlaydateAPI *pd, uint8_t n, bool s);
+#ifdef DEBUG
+static void toggleDrawFPS(void *userdata);
+#endif
 
 #ifdef _WINDLL
 __declspec(dllexport)
@@ -177,6 +186,10 @@ static void sendKeyPress(PlaydateAPI *pd, uint8_t n, bool s)
 
 static void init(PlaydateAPI *pd)
 {
+#ifdef DEBUG
+    pd->system->addCheckmarkMenuItem("Draw FPS", 0, toggleDrawFPS, pd);
+#endif
+
     pd->system->setUpdateCallback(update, pd);
     pd->system->setSerialMessageCallback(serial);
     pd->display->setRefreshRate(50);
@@ -222,6 +235,19 @@ static void init(PlaydateAPI *pd)
         }
     }
 }
+
+#ifdef DEBUG
+void toggleDrawFPS(void *userdata)
+{
+    PlaydateAPI *pd = userdata;
+    draw_fps = !draw_fps;
+    pd->system->setMenuItemValue(drawFPSMenuItem, draw_fps);
+    if (!draw_fps)
+    {
+        draw_fps_dirty = true;
+    }
+}
+#endif
 
 /**
  * Examples:
@@ -430,7 +456,20 @@ static int update(void *userdata)
     }
 
 #ifdef DEBUG
-    pd->system->drawFPS(0, 0);
+    if (draw_fps)
+    {
+        pd->system->drawFPS(0, 0);
+    }
+    else if (draw_fps_dirty)
+    {
+        gfx->fillRect(
+            0,
+            0,
+            15,
+            12,
+            kColorWhite);
+        draw_fps_dirty = false;
+    }
 #endif
     return 1;
 }
