@@ -429,6 +429,8 @@ static int update(void *userdata)
         ring->dirty = false;
     }
 
-    // pd->system->drawFPS(0, 0);
+#ifdef DEBUG
+    pd->system->drawFPS(0, 0);
+#endif
     return 1;
 }
