@@ -32,10 +32,8 @@ project(${PLAYDATE_GAME_NAME} C ASM)
 
 if (TOOLCHAIN STREQUAL "armgcc")
 	add_executable(${PLAYDATE_GAME_DEVICE} src/main.c)
-	target_compile_definitions(${PLAYDATE_GAME_DEVICE} PRIVATE "DEBUG=$<IF:$<CONFIG:Debug>,1,0>")
 else()
 	add_library(${PLAYDATE_GAME_NAME} SHARED src/main.c )
-	target_compile_definitions(${PLAYDATE_GAME_NAME} PRIVATE "DEBUG=$<IF:$<CONFIG:Debug>,1,0>")
 endif()
 
 include(${SDK}/C_API/buildsupport/playdate_game.cmake)
