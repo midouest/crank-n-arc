@@ -3,3 +3,4 @@ author=midouest
 description=monome arc emulator
 bundleID=dev.rray.crank-n-arc
 imagePath=launcher
+buildNumber=1
