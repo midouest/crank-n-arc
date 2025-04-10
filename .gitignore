@@ -5,3 +5,4 @@ build_device
 *.pdx
 *.dylib
 *.elf
+*.zip
