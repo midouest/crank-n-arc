@@ -4,4 +4,4 @@ description=monome arc emulator
 bundleID=dev.rray.crank-n-arc
 imagePath=launcher
 version=1.0.1
-buildNumber=3
+buildNumber=4
